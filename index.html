@@ -745,6 +745,22 @@
   </div>
 </section>
 
+<div id="termine-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,14,12,0.72); z-index:100; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--bg-alt); border:1px solid var(--line); border-radius:6px; max-width:400px; width:100%; padding:28px; max-height:90vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 id="termine-titel" style="font-family:'Fraunces', serif; font-size:1.15rem; font-weight:500;">Termine</h3>
+      <button type="button" id="termine-schliessen" style="background:none; border:none; color:var(--cream-dim); font-size:1.4rem; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <button type="button" id="termine-zurueck" class="btn btn-ghost" style="padding:5px 10px; font-size:0.85rem;">‹</button>
+      <span id="termine-monat" style="font-family:'IBM Plex Mono', monospace; font-size:0.9rem;"></span>
+      <button type="button" id="termine-vor" class="btn btn-ghost" style="padding:5px 10px; font-size:0.85rem;">›</button>
+    </div>
+    <div id="termine-tage" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; font-size:0.8rem; text-align:center;"></div>
+    <p class="note" style="margin-top:14px;">Goldene Tage sind angegebene Verfügbarkeiten — bitte trotzdem kurz Kontakt aufnehmen, um den Termin zu bestätigen.</p>
+  </div>
+</div>
+
 <div id="erfolg-overlay" style="display:none; position:fixed; inset:0; background:rgba(10,14,12,0.72); z-index:100; align-items:center; justify-content:center; padding:20px;">
   <div style="background:var(--bg-alt); border:1px solid var(--line); border-radius:6px; max-width:480px; width:100%; padding:32px; max-height:90vh; overflow-y:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
@@ -1372,7 +1388,7 @@
     }
   }
 
-  function terminAnzeige(wert){
+  function terminAnzeige(wert, name){
     var text = (wert || '').toString().trim();
     if(!text) return '';
     var heute = new Date();
@@ -1384,12 +1400,14 @@
       return d >= heute;
     }).sort();
     if(kommende.length === 0) return '';
-    var teile = kommende.slice(0, 4).map(function(iso){
+    var teile = kommende.slice(0, 3).map(function(iso){
       var t = iso.split('-');
       return t[2] + '.' + t[1] + '.';
     });
-    var mehr = kommende.length > 4 ? ' +' + (kommende.length - 4) : '';
-    return '<div class="meta" style="margin-top:4px; color:var(--accent);">Verfügbar: ' + teile.join(' · ') + mehr + '</div>';
+    var mehr = kommende.length > 3 ? ' +' + (kommende.length - 3) : '';
+    return '<div class="meta termine-vorschau" style="margin-top:4px; color:var(--accent); cursor:pointer;" data-termine="' + escapeHtml(kommende.join(',')) + '" data-name="' + escapeHtml(name || '') + '">' +
+      '📅 Verfügbar: ' + teile.join(' · ') + mehr + ' — Kalender anzeigen' +
+    '</div>';
   }
 
   function rendereListe(liste){
@@ -1413,7 +1431,7 @@
       var verifiziertBadge = (verifiziert === 'ja' || verifiziert === 'x' || verifiziert === 'wahr')
         ? '<span title="Von Gut Steimke e.V. geprüft" style="color:var(--accent); font-size:0.78rem; margin-left:6px;">✓ verifiziert</span>' : '';
       var zusatz = [row['Setlänge'], row['Equipment']].filter(Boolean).map(escapeHtml).join(' · ');
-      var termineHtml = terminAnzeige(row['Verfuegbarkeit']);
+      var termineHtml = terminAnzeige(row['Verfuegbarkeit'], row['Name']);
       var kontaktWert = escapeHtml(row['Kontakt'] || '');
       return '' +
         '<div class="result-card">' +
@@ -1443,6 +1461,14 @@
         var bereich = btn.closest('.kontakt-bereich');
         var wert = bereich.getAttribute('data-kontakt');
         bereich.innerHTML = '<span style="font-family:\'IBM Plex Mono\', monospace; font-size:0.85rem;">' + wert + '</span>';
+      });
+    });
+
+    results.querySelectorAll('.termine-vorschau').forEach(function(el){
+      el.addEventListener('click', function(){
+        var isoListe = el.getAttribute('data-termine').split(',').filter(Boolean);
+        var name = el.getAttribute('data-name');
+        termineModalOeffnen(name, isoListe);
       });
     });
   }
@@ -1643,6 +1669,84 @@
   }
 
   ladeErfolge();
+
+  // ── Termine-Ansicht (Kalender-Popup pro Eintrag) ──────────────────
+  var termineOverlay = document.getElementById('termine-overlay');
+  var termineMonat = new Date();
+  var termineAktuelleListe = [];
+
+  function termineModalOeffnen(name, isoListe){
+    termineAktuelleListe = isoListe;
+    document.getElementById('termine-titel').textContent = 'Termine — ' + (name || '');
+    var erster = isoListe.slice().sort()[0];
+    if(erster){
+      var t = erster.split('-');
+      termineMonat = new Date(parseInt(t[0],10), parseInt(t[1],10) - 1, 1);
+    } else {
+      termineMonat = new Date();
+      termineMonat.setDate(1);
+    }
+    termineKalenderZeichnen();
+    termineOverlay.style.display = 'flex';
+  }
+
+  function termineKalenderZeichnen(){
+    var jahr = termineMonat.getFullYear();
+    var monat = termineMonat.getMonth();
+    document.getElementById('termine-monat').textContent = MONATSNAMEN[monat] + ' ' + jahr;
+
+    var tageContainer = document.getElementById('termine-tage');
+    tageContainer.innerHTML = '';
+
+    WOCHENTAGE.forEach(function(w){
+      var el = document.createElement('div');
+      el.textContent = w;
+      el.style.color = 'var(--cream-dim)';
+      el.style.fontFamily = "'IBM Plex Mono', monospace";
+      el.style.fontSize = '0.72rem';
+      tageContainer.appendChild(el);
+    });
+
+    var ersterTag = new Date(jahr, monat, 1);
+    var startVersatz = (ersterTag.getDay() + 6) % 7;
+    var anzahlTage = new Date(jahr, monat + 1, 0).getDate();
+
+    for(var i = 0; i < startVersatz; i++){
+      tageContainer.appendChild(document.createElement('div'));
+    }
+
+    for(var tag = 1; tag <= anzahlTage; tag++){
+      var iso = isoDatum(new Date(jahr, monat, tag));
+      var el = document.createElement('div');
+      el.textContent = tag;
+      el.style.padding = '6px 0';
+      el.style.borderRadius = '3px';
+      el.style.fontFamily = "'IBM Plex Mono', monospace";
+      if(termineAktuelleListe.indexOf(iso) !== -1){
+        el.style.background = 'var(--accent)';
+        el.style.color = '#1A1305';
+        el.style.fontWeight = '600';
+      } else {
+        el.style.color = 'var(--cream-dim)';
+      }
+      tageContainer.appendChild(el);
+    }
+  }
+
+  document.getElementById('termine-schliessen').addEventListener('click', function(){
+    termineOverlay.style.display = 'none';
+  });
+  termineOverlay.addEventListener('click', function(evt){
+    if(evt.target === termineOverlay) termineOverlay.style.display = 'none';
+  });
+  document.getElementById('termine-zurueck').addEventListener('click', function(){
+    termineMonat.setMonth(termineMonat.getMonth() - 1);
+    termineKalenderZeichnen();
+  });
+  document.getElementById('termine-vor').addEventListener('click', function(){
+    termineMonat.setMonth(termineMonat.getMonth() + 1);
+    termineKalenderZeichnen();
+  });
 </script>
 </body>
 </html>
