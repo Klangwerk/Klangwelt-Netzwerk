@@ -1263,6 +1263,19 @@
       .replace(/"/g, '&quot;');
   }
 
+  // Wandelt verschiedene Google-Drive-Link-Formate in das zuverlässigste
+  // Format zum Einbetten als Bild um (thumbnail?id=...). Das alte Format
+  // "uc?export=view&id=..." wird von Google inzwischen oft blockiert.
+  function driveBildUrl(url){
+    var wert = (url || '').toString().trim();
+    if(!wert) return '';
+    var id = null;
+    var match = wert.match(/[?&]id=([a-zA-Z0-9_-]+)/) || wert.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if(match) id = match[1];
+    if(!id) return wert; // kein erkennbarer Drive-Link, unverändert lassen
+    return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w800';
+  }
+
   function websiteLink(text){
     var wert = (text || '').toString().trim();
     if(!wert) return '';
@@ -1422,8 +1435,8 @@
       var kat = normalisiere(row['Kategorie']);
       var farbe = KATEGORIE_FARBE[kat] || 'var(--cream-dim)';
       var link = mediaEmbedOderLink(row['Website'] || row['Webside & Co']);
-      var fotoUrl = (row['Foto'] || '').toString().trim();
-      var fotoUrl2 = (row['Foto2'] || '').toString().trim();
+      var fotoUrl = driveBildUrl((row['Foto'] || '').toString().trim());
+      var fotoUrl2 = driveBildUrl((row['Foto2'] || '').toString().trim());
       var fotos = [fotoUrl, fotoUrl2].filter(Boolean).map(function(u){
         return '<img class="result-foto" src="' + escapeHtml(u) + '" alt="" loading="lazy">';
       }).join('');
