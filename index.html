@@ -640,6 +640,19 @@
         <input id="foto2" type="file" accept="image/*" style="padding:9px 13px;">
         <p id="foto2-debug" style="margin-top:6px; font-family:'IBM Plex Mono', monospace; font-size:0.78rem; color:var(--accent);"></p>
       </div>
+      <div class="field">
+        <label>Verfügbare Termine (optional)</label>
+        <p class="note" style="margin-top:0; margin-bottom:10px;">Tage anklicken, an denen du verfügbar bist — hilft anderen bei der Planung.</p>
+        <div id="kalender-widget" style="background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <button type="button" id="kalender-zurueck" class="btn btn-ghost" style="padding:5px 10px; font-size:0.85rem;">‹</button>
+            <span id="kalender-monat" style="font-family:'IBM Plex Mono', monospace; font-size:0.9rem;"></span>
+            <button type="button" id="kalender-vor" class="btn btn-ghost" style="padding:5px 10px; font-size:0.85rem;">›</button>
+          </div>
+          <div id="kalender-tage" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; font-size:0.8rem; text-align:center;"></div>
+        </div>
+        <div id="kalender-auswahl" style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
       <button type="submit" class="btn btn-primary" style="align-self:flex-start;">Absenden</button>
     </form>
   </div>
@@ -950,8 +963,116 @@
     });
   }
 
-  // ── Automatische Übernahme ins Google Sheet ──────────────────────
-  // Hier die "Web App"-URL aus Google Apps Script eintragen (siehe Anleitung).
+  // ── Kalender-Widget: verfügbare Termine anklicken ────────────────
+  var kalenderMonat = new Date();
+  kalenderMonat.setDate(1);
+  var ausgewaehlteTermine = []; // Array von 'YYYY-MM-DD'-Strings
+
+  var MONATSNAMEN = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  var WOCHENTAGE = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+
+  function isoDatum(datum){
+    return datum.getFullYear() + '-' + String(datum.getMonth() + 1).padStart(2, '0') + '-' + String(datum.getDate()).padStart(2, '0');
+  }
+
+  function datumKurz(iso){
+    var teile = iso.split('-');
+    return teile[2] + '.' + teile[1] + '.';
+  }
+
+  function kalenderZeichnen(){
+    var jahr = kalenderMonat.getFullYear();
+    var monat = kalenderMonat.getMonth();
+    document.getElementById('kalender-monat').textContent = MONATSNAMEN[monat] + ' ' + jahr;
+
+    var tageContainer = document.getElementById('kalender-tage');
+    tageContainer.innerHTML = '';
+
+    WOCHENTAGE.forEach(function(w){
+      var el = document.createElement('div');
+      el.textContent = w;
+      el.style.color = 'var(--cream-dim)';
+      el.style.fontFamily = "'IBM Plex Mono', monospace";
+      el.style.fontSize = '0.72rem';
+      tageContainer.appendChild(el);
+    });
+
+    var ersterTag = new Date(jahr, monat, 1);
+    var startVersatz = (ersterTag.getDay() + 6) % 7; // Montag = 0
+    var anzahlTage = new Date(jahr, monat + 1, 0).getDate();
+    var heute = new Date();
+    heute.setHours(0,0,0,0);
+
+    for(var i = 0; i < startVersatz; i++){
+      tageContainer.appendChild(document.createElement('div'));
+    }
+
+    for(var tag = 1; tag <= anzahlTage; tag++){
+      var datum = new Date(jahr, monat, tag);
+      var iso = isoDatum(datum);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = tag;
+      btn.style.padding = '6px 0';
+      btn.style.border = '1px solid var(--line)';
+      btn.style.borderRadius = '3px';
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--cream)';
+      btn.style.cursor = 'pointer';
+      btn.style.fontFamily = "'IBM Plex Mono', monospace";
+
+      if(datum < heute){
+        btn.disabled = true;
+        btn.style.opacity = '0.3';
+        btn.style.cursor = 'default';
+      }
+
+      if(ausgewaehlteTermine.indexOf(iso) !== -1){
+        btn.style.background = 'var(--accent)';
+        btn.style.color = '#1A1305';
+        btn.style.borderColor = 'var(--accent)';
+      }
+
+      btn.addEventListener('click', function(){
+        var meinIso = this.getAttribute('data-iso');
+        var idx = ausgewaehlteTermine.indexOf(meinIso);
+        if(idx === -1){
+          ausgewaehlteTermine.push(meinIso);
+        } else {
+          ausgewaehlteTermine.splice(idx, 1);
+        }
+        ausgewaehlteTermine.sort();
+        kalenderZeichnen();
+        kalenderAuswahlZeichnen();
+      });
+      btn.setAttribute('data-iso', iso);
+      tageContainer.appendChild(btn);
+    }
+  }
+
+  function kalenderAuswahlZeichnen(){
+    var auswahlContainer = document.getElementById('kalender-auswahl');
+    if(ausgewaehlteTermine.length === 0){
+      auswahlContainer.innerHTML = '<span class="note" style="margin:0;">Noch keine Termine ausgewählt.</span>';
+      return;
+    }
+    auswahlContainer.innerHTML = ausgewaehlteTermine.map(function(iso){
+      return '<span style="background:rgba(212,160,23,0.16); border:1px solid var(--accent); color:var(--accent); padding:3px 9px; border-radius:12px; font-family:\'IBM Plex Mono\', monospace; font-size:0.78rem;">' + datumKurz(iso) + '</span>';
+    }).join('');
+  }
+
+  document.getElementById('kalender-zurueck').addEventListener('click', function(){
+    kalenderMonat.setMonth(kalenderMonat.getMonth() - 1);
+    kalenderZeichnen();
+  });
+  document.getElementById('kalender-vor').addEventListener('click', function(){
+    kalenderMonat.setMonth(kalenderMonat.getMonth() + 1);
+    kalenderZeichnen();
+  });
+
+  kalenderZeichnen();
+  kalenderAuswahlZeichnen();
+
   // Solange hier der Platzhalter steht, nutzt das Formular automatisch
   // weiterhin die E-Mail-Variante als sichere Rückfalloption.
   var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnHbWAxP9QhNHmbvitW1YvWIhfLNkdYV5BEQLa1iOiggon_LWgOeFwjdAjCnKoHw/exec';
@@ -1040,7 +1161,8 @@
       'Website': document.getElementById('web').value,
       'Beschreibung': beschreibung,
       'Setlänge': rolle === 'Künstler:in' ? setlaengeInput.value : '',
-      'Equipment': rolle === 'Künstler:in' ? equipmentSelect.value : ''
+      'Equipment': rolle === 'Künstler:in' ? equipmentSelect.value : '',
+      'Verfuegbarkeit': ausgewaehlteTermine.join(', ')
     };
 
     if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('HIER_DEINE') === 0){
@@ -1086,6 +1208,9 @@
       formStatus.style.color = 'var(--accent)';
       anmeldeForm.reset();
       updateFelder();
+      ausgewaehlteTermine = [];
+      kalenderZeichnen();
+      kalenderAuswahlZeichnen();
     }).catch(function(fehler){
       fotoDebug.textContent = 'Fehler bei der Verarbeitung: ' + fehler.message;
       sendeMailtoFallback();
@@ -1247,6 +1372,26 @@
     }
   }
 
+  function terminAnzeige(wert){
+    var text = (wert || '').toString().trim();
+    if(!text) return '';
+    var heute = new Date();
+    heute.setHours(0,0,0,0);
+    var kommende = text.split(',').map(function(s){ return s.trim(); }).filter(Boolean).filter(function(iso){
+      var teile = iso.split('-');
+      if(teile.length !== 3) return false;
+      var d = new Date(parseInt(teile[0],10), parseInt(teile[1],10) - 1, parseInt(teile[2],10));
+      return d >= heute;
+    }).sort();
+    if(kommende.length === 0) return '';
+    var teile = kommende.slice(0, 4).map(function(iso){
+      var t = iso.split('-');
+      return t[2] + '.' + t[1] + '.';
+    });
+    var mehr = kommende.length > 4 ? ' +' + (kommende.length - 4) : '';
+    return '<div class="meta" style="margin-top:4px; color:var(--accent);">Verfügbar: ' + teile.join(' · ') + mehr + '</div>';
+  }
+
   function rendereListe(liste){
     var results = document.getElementById('results');
 
@@ -1268,6 +1413,7 @@
       var verifiziertBadge = (verifiziert === 'ja' || verifiziert === 'x' || verifiziert === 'wahr')
         ? '<span title="Von Gut Steimke e.V. geprüft" style="color:var(--accent); font-size:0.78rem; margin-left:6px;">✓ verifiziert</span>' : '';
       var zusatz = [row['Setlänge'], row['Equipment']].filter(Boolean).map(escapeHtml).join(' · ');
+      var termineHtml = terminAnzeige(row['Verfuegbarkeit']);
       var kontaktWert = escapeHtml(row['Kontakt'] || '');
       return '' +
         '<div class="result-card">' +
@@ -1282,6 +1428,7 @@
               '<div class="meta">' + [row['Kategorie'], row['PLZ-Bereich'], sparteArt(row)].filter(Boolean).map(escapeHtml).join(' · ') + '</div>' +
               (zusatz ? '<div class="meta" style="margin-top:2px;">' + zusatz + '</div>' : '') +
               (link ? '<div style="margin-top:4px; font-size:0.85rem;">' + link + '</div>' : '') +
+              termineHtml +
               '<div style="margin-top:6px;" class="kontakt-bereich" data-kontakt="' + kontaktWert + '">' +
                 '<button type="button" class="btn btn-ghost kontakt-btn" style="padding:6px 12px; font-size:0.8rem;">Kontakt anzeigen</button>' +
               '</div>' +
